@@ -22,3 +22,15 @@
 
 ## 🧱 Architecture
 
+This project follows the **MVVM (Model-View-ViewModel)** architecture pattern. Here's how the layers are structured:
+
+### 🔄 Flow Overview
+
+1. `MainActivity` observes data from `MusicViewModel`.
+2. `MusicViewModel` calls `MusicRepository` to fetch songs via `Retrofit`.
+3. `PlayerManager` controls playback, wrapped by `MusicService`.
+4. `MusicService` listens to playback controls (from UI or Notification).
+5. Foreground `Notification` updates UI and allows media control.
+
+This architecture ensures separation of concerns, scalability, and testability.
+
