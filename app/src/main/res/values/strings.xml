@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">musy</string>
+
+    <string name="prev">Previous</string>
+    <string name="play">Play/Pause</string>
+    <string name="next">Next</string>
+    <string name="rewind">Rewind</string>
+</resources>
