@@ -4,13 +4,14 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.*
+import com.example.musy.service.MusicPlayerManager
 import com.example.musy.service.MusicService
 import com.example.musy.data.model.Song
 import com.example.musy.data.repository.MusicRepository
-import com.example.musy.service.MusicPlayerManager
 import kotlinx.coroutines.*
 
 class MusicViewModel(private val context: Context) : ViewModel() {
+
     private val repository = MusicRepository()
     val songs: LiveData<List<Song>> = repository.songs
 
@@ -29,7 +30,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val recentlyPlayed = mutableListOf<Int>()
     private val recentLimit = 5
 
-    val playerManager =  MusicPlayerManager()
+    private var progressJob: Job? = null
+
+    private val playerManager = MusicPlayerManager.getInstance()
 
     init {
         songs.observeForever { list ->
@@ -37,6 +40,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 playSongAt(0)
             }
         }
+
     }
 
     fun searchSongs(query: String) {
@@ -46,25 +50,26 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun togglePlayPause() {
-        val song = currentSong() ?: return
-        val action = if (_isPlaying.value == true) MusicService.ACTION_PAUSE else MusicService.ACTION_PLAY
-        playerManager.togglePlayPause()
+        val currentlyPlaying = _isPlaying.value ?: false
+        if(currentlyPlaying) stopUpdatingPosition()
+        else startUpdatingPosition()
+        val action = if (currentlyPlaying) MusicService.ACTION_PAUSE else MusicService.ACTION_PLAY
 
-        if (_isPlaying.value == true) {
-            _isPlaying.value = false
-        } else {
-            _isPlaying.value = true
-        }
+        sendMusicServiceCommand(action)
 
-        sendServiceCommand(action, song)
-
+        _isPlaying.value = !currentlyPlaying
     }
+    fun setIsPlaying(playing: Boolean) {
+        _isPlaying.value = playing
+        if (playing) startUpdatingPosition()
+        else stopUpdatingPosition()
+    }
+
 
     fun playSongAt(index: Int) {
         val list = songs.value ?: return
         if (index !in list.indices) return
         _currentIndex.value = index
-        _isPlaying.value = true
         startPlayback(list[index])
     }
 
@@ -83,42 +88,74 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun rewind10() {
-        sendServiceCommand(MusicService.ACTION_REWIND, currentSong())
+        playerManager.rewind10Seconds()
     }
 
     fun seekTo(positionMs: Int) {
-        val intent = Intent(context, MusicService::class.java).apply {
-            action = MusicService.ACTION_SEEK
-            putExtra(MusicService.EXTRA_SEEK_POSITION, positionMs)
-        }
-        ContextCompat.startForegroundService(context, intent)
-        _position.value = positionMs
+        playerManager.seekTo(positionMs)
+        _position.postValue(positionMs)
     }
 
+    fun playRandomSong() {
+        val songList = songs.value ?: return
+        if (songList.isEmpty()) return
+
+        val availableIndexes = songList.indices
+            .filter { it !in recentlyPlayed }
+            .ifEmpty { songList.indices.toList() }
+
+        val randomIndex = availableIndexes.random()
+
+        recentlyPlayed.add(randomIndex)
+        if (recentlyPlayed.size > recentLimit) {
+            recentlyPlayed.removeAt(0)
+        }
+
+        playSongAt(randomIndex)
+    }
+
+
     private fun startPlayback(song: Song) {
-        sendServiceCommand(MusicService.ACTION_PLAY, song)
-        _duration.value = 30000 // 30 seconds preview by default, will be updated via broadcast
+        playerManager.play(song.previewUrl)
+        _duration.value = 30000
         _position.value = 0
+        _isPlaying.value = true
+
+        startUpdatingPosition()
+        sendMusicServiceCommand(MusicService.ACTION_PLAY)
     }
 
     private fun currentSong(): Song? {
         return songs.value?.getOrNull(_currentIndex.value ?: 0)
     }
 
-    private fun sendServiceCommand(action: String, song: Song?) {
+    private fun sendMusicServiceCommand(action: String) {
         val intent = Intent(context, MusicService::class.java).apply {
             this.action = action
-            song?.let {
-                putExtra(MusicService.EXTRA_SONG_TITLE, it.title)
-                putExtra(MusicService.EXTRA_ALBUM_ART, it.albumArt)
-                putExtra(MusicService.EXTRA_SONG_URL, it.previewUrl)
-            }
         }
         ContextCompat.startForegroundService(context, intent)
     }
 
-    fun updatePlaybackStateFromService(isPlaying: Boolean, position: Int) {
-        _isPlaying.value = isPlaying
-        _position.value = position
+    private fun startUpdatingPosition() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            while (isActive && (_isPlaying.value == true)) {
+                _position.postValue(playerManager.getCurrentPosition())
+                delay(500)
+            }
+        }
+    }
+
+
+
+    private fun stopUpdatingPosition() {
+        progressJob?.cancel()
+    }
+
+
+    override fun onCleared() {
+        super.onCleared()
+        progressJob?.cancel()
+        playerManager.release()
     }
 }

@@ -13,7 +13,7 @@ class MusicRepository {
     private val _songs = MutableLiveData<List<Song>>()
     val songs: LiveData<List<Song>> = _songs
 
-    fun fetchSongs(query: String) {
+    suspend fun fetchSongs(query: String) {
         RetrofitClient.apiService.searchSongs(query).enqueue(object : Callback<ApiResponse> {
             override fun onResponse(call: Call<ApiResponse>, response: Response<ApiResponse>) {
                 if (response.isSuccessful) {

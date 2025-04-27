@@ -9,7 +9,8 @@ data class SongDto(
     val title: String,
     val artist: Artist,
     val album: Album,
-    val preview: String
+    val preview: String,
+    val duration: Int
 ) {
     fun toSong(): Song {
         return Song(
@@ -17,7 +18,8 @@ data class SongDto(
             title = title,
             artist = artist.name,
             albumArt = album.cover,
-            previewUrl = preview
+            previewUrl = preview,
+            duration = duration*1000
         )
     }
 }
